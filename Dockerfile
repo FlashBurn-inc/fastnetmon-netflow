@@ -18,19 +18,15 @@ RUN mv /fastnetmon /fastnetmon_src && \
     cmake .. -DDISABLE_PF_RING_SUPPORT=ON -DDISABLE_NETMAP_SUPPORT=ON -DENABLE_LUA_SUPPORT=NO && \
     make && \
     cd /fastnetmon_src/src && \
-# Remove all comment lines in config
-    sed -i '/^[[:blank:]]*#/d;s/#.*//' fastnetmon.conf && \
-# Disable ban, monitor only
-    sed -i 's/enable_ban\s*=.*/enable_ban = off/' fastnetmon.conf && \
-# Enable graphite
-    sed -i 's/graphite\s*=.*/graphite = on/' fastnetmon.conf && \
-    echo $'\
 tar zxf /build.tgz && \
-GRAPHITE_IP=`getent hosts $GRAPHITE | awk \'{ print $1 }\'` && \
-AVERAGE_CALCULATION_TIME=${AVERAGE_CALCULATION_TIME:-1} && \
-sed -i "s/graphite_host = 127.0.0.1/graphite_host = ${GRAPHITE_IP:-graphite_env_not_set}/" /etc/fastnetmon.conf && \
-sed -i "s/average_calculation_time\s*=.*/average_calculation_time = $AVERAGE_CALCULATION_TIME/" /etc/fastnetmon.conf && \
-echo "$LOCAL_NETWORKS" > /etc/networks_list && \
+mkdir -p /configs && \
+mv /etc/fastnetmon.conf /configs/fastnetmon.conf && \
+echo -e "192.168.0.0/16\n172.16.0.0/12\n10.0.0.0/8" > /configs/networks_list && \
+cp /fastnetmon_src/src/notify_about_attack.sh /configs && \
+chmod 755 /configs/notify_about_attack.sh && \
+ln -s /configs/fastnetmon.conf /etc/fastnetmon.conf && \
+ln -s /configs/networks_list /configs/networks_list && \
+ln -s /configs/bin/notify_about_attack.sh /usr/local/bin/ && \
 echo "Starting fastnetmon with config:" && \
 cat /etc/fastnetmon.conf && \
 /fastnetmon --log_file /dev/stdout\
@@ -41,9 +37,10 @@ cat /etc/fastnetmon.conf && \
     cp /fastnetmon_src/src/fastnetmon.conf /etc/fastnetmon.conf && \
     cp /fastnetmon_src/src/build/fastnetmon / && \
     cp /fastnetmon_src/src/build/fastnetmon_client / && \
-    tar czf /build.tgz /usr/lib/libjson-c.so* /usr/lib/libndpi.so* /usr/lib/liblog4cpp.so* /etc/fastnetmon.conf /fastnetmon_client /fastnetmon
+    tar czf /build.tgz /usr/lib/libjson-c.so* /usr/lib/libndpi.so* /usr/lib/liblog4cpp.so* /etc/fastnetmon.conf /etc/networks_list /fastnetmon_client /fastnetmon /configs/* /usr/local/bin/notify_about_attack.sh
 
 FROM alpine:3.7
 RUN apk update && apk add boost-thread boost-system boost-regex boost-program_options libpcap libstdc++ ncurses
 COPY --from=builder /build.tgz /start.sh /
+VOLUME ["/configs"]
 CMD ["/bin/sh", "/start.sh"]
