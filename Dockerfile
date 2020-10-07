@@ -1,5 +1,4 @@
-FROM alpine:3.7 as builder
-MAINTAINER capnis
+FROM alpine:3.12 as builder
 
 RUN apk update && apk add cmake g++ make git autoconf automake libtool boost-dev boost-thread boost-system boost-regex boost-program_options ncurses-dev libpcap-dev
 RUN git clone https://github.com/pavel-odintsov/fastnetmon
@@ -10,21 +9,22 @@ RUN mv /fastnetmon /fastnetmon_src && \
     mkdir -p /fastnetmon_src/src/build && \
     cd /fastnetmon_src/src/build && \
 # Build with fresh release of libndpi
-    sed -i 's/\/opt\/ndpi\/include\/libndpi\-1.7.1/\/opt\/ndpi\/include\/libndpi\-2.2.2/' ../CMakeLists.txt && \
-# Build with fresh release of json-c
-    sed -i 's/\/opt\/json\-c\-0.12/\/opt\/json\-c\-0.13/' ../CMakeLists.txt && \
+    sed -i 's/set(NDPI_INCLUDE_DIRS "\${FASTNETMON_LIBRARIES_GLOBAL_PATH}\/ndpi\/include\/libndpi-1.7.1")/set(NDPI_INCLUDE_DIRS "\${FASTNETMON_LIBRARIES_GLOBAL_PATH}\/ndpi\/include\/libndpi-2.2.2")/' ../CMakeLists.txt && \
+# Some fixes, because builds crashes with errors 
+    sed -i '5a\#include \<sys\/time.h\>\' ../fastnetmon_simple_packet.h && \
+    sed -i '4a\#define _BSD_SOURCE\' ../fast_endianless.hpp && \
+    sed -i '5a\#include \<endian.h\>\' ../fast_endianless.hpp && \
 # Hack to disable AF_PACKET support, it builds with error and we don't need it for NetFlow anyway
     sed -i 's/if\s*(ENABLE_AFPACKET_SUPPORT)/set (ENABLE_AFPACKET_SUPPORT OFF)\nif (ENABLE_AFPACKET_SUPPORT)/' ../CMakeLists.txt && \
     cmake .. -DDISABLE_PF_RING_SUPPORT=ON -DDISABLE_NETMAP_SUPPORT=ON -DENABLE_LUA_SUPPORT=NO && \
     make && \
     cd /fastnetmon_src/src
-#tar zxf /build.tgz && \
 RUN mkdir -p /configs && \
 cp /fastnetmon_src/src/fastnetmon.conf /configs/fastnetmon.conf && \
 echo -e "192.168.0.0/16\n172.16.0.0/12\n10.0.0.0/8" > /configs/networks_list && \
 cp /fastnetmon_src/src/notify_about_attack.sh /configs && \
 chmod 755 /configs/notify_about_attack.sh && \
-echo -e "Starting fastnetmon\n/fastnetmon --log_file /dev/stdout" > /start.sh && \
+echo -e "echo Starting fastnetmon\n/fastnetmon --log_file /dev/stdout" > /start.sh && \
     cp /opt/json-c-0.13/lib/libjson-c.so* /usr/lib/ && \
     cp /opt/ndpi/lib/libndpi.so* /usr/lib/ && \
     cp /opt/log4cpp1.1.1/lib/liblog4cpp.so* /usr/lib/ && \
@@ -33,7 +33,7 @@ echo -e "Starting fastnetmon\n/fastnetmon --log_file /dev/stdout" > /start.sh &&
     cp /fastnetmon_src/src/build/fastnetmon_client / && \
     tar czf /build.tgz /usr/lib/libjson-c.so* /usr/lib/libndpi.so* /usr/lib/liblog4cpp.so* /fastnetmon_client /fastnetmon /configs/*
 
-FROM alpine:3.7
+FROM alpine:3.12
 RUN apk update && apk add boost-thread boost-system boost-regex boost-program_options libpcap libstdc++ ncurses
 COPY --from=builder /build.tgz /start.sh /
 RUN tar zxf /build.tgz && \
