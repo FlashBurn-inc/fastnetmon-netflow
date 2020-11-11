@@ -1,7 +1,7 @@
 FROM alpine:3.12 as builder
 
 RUN apk update && apk add cmake g++ make git autoconf automake libtool boost-dev boost-thread boost-system boost-regex boost-program_options ncurses-dev libpcap-dev
-RUN git clone https://github.com/pavel-odintsov/fastnetmon
+RUN git clone https://github.com/pavel-odintsov/fastnetmon && cd fastnetmon && git reset --hard 5a1db9e4db37bd00df3d57751f83aac4fc08d25e
 RUN cd / && wget --no-check-certificate https://sourceforge.net/projects/log4cpp/files/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.1.tar.gz/download -O /log4cpp-1.1.1.tar.gz && tar zxvf /log4cpp-1.1.1.tar.gz && rm /log4cpp-1.1.1.tar.gz && cd /log4cpp && ./configure --prefix=/opt/log4cpp1.1.1 && make && make install
 RUN cd / && git clone -b json-c-0.13 https://github.com/json-c/json-c.git && cd /json-c && ./autogen.sh && ./configure --prefix=/opt/json-c-0.13 && touch aclocal.m4 Makefile.in && make && make install
 RUN cd / && git clone -b 2.2.2-stable https://github.com/ntop/nDPI.git && cd /nDPI && ./autogen.sh && ./configure --prefix=/opt/ndpi && make && make install
