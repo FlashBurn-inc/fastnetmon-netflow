@@ -34,7 +34,7 @@ echo -e "echo Starting fastnetmon\n/fastnetmon --log_file /dev/stdout" > /start.
     tar czf /build.tgz /usr/lib/libjson-c.so* /usr/lib/libndpi.so* /usr/lib/liblog4cpp.so* /fastnetmon_client /fastnetmon /configs/*
 
 FROM alpine:3.12
-RUN apk update && apk add boost-thread boost-system boost-regex boost-program_options libpcap libstdc++ ncurses
+RUN apk update && apk add boost-thread boost-system boost-regex boost-program_options libpcap libstdc++ ncurses curl
 COPY --from=builder /build.tgz /start.sh /
 RUN tar zxf /build.tgz && \
 ln -s /configs/fastnetmon.conf /etc/fastnetmon.conf && \
