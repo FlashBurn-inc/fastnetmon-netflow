@@ -51,6 +51,7 @@ COPY --from=builder /build.tgz /start.sh /
 RUN tar zxf /build.tgz && \
 curl -L https://github.com/Exa-Networks/exabgp/archive/3.4.20.tar.gz | tar zx && \
 cd exabgp-3.4.20 && python2.7 setup.py install && \
+cd / && \
 rm -rf exabgp-3.4.20 && \
 ln -s /configs/fastnetmon.conf /etc/fastnetmon.conf && \
 ln -s /configs/networks_list /etc/networks_list && \
