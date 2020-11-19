@@ -1,0 +1,60 @@
+FROM alpine:3.12 as builder
+
+RUN apk add --no-cache cmake g++ make git autoconf automake libtool boost-dev boost-thread boost-system boost-regex boost-program_options ncurses-dev libpcap-dev
+RUN git clone https://github.com/pavel-odintsov/fastnetmon && cd fastnetmon && git reset --hard 5a1db9e4db37bd00df3d57751f83aac4fc08d25e
+RUN cd / && wget --no-check-certificate https://sourceforge.net/projects/log4cpp/files/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.1.tar.gz/download -O /log4cpp-1.1.1.tar.gz && tar zxvf /log4cpp-1.1.1.tar.gz && rm /log4cpp-1.1.1.tar.gz && cd /log4cpp && ./configure --prefix=/opt/log4cpp1.1.1 && make && make install
+RUN cd / && git clone -b json-c-0.13 https://github.com/json-c/json-c.git && cd /json-c && ./autogen.sh && ./configure --prefix=/opt/json-c-0.13 && touch aclocal.m4 Makefile.in && make && make install
+RUN cd / && git clone -b 2.2.2-stable https://github.com/ntop/nDPI.git && cd /nDPI && ./autogen.sh && ./configure --prefix=/opt/ndpi && make && make install
+RUN mv /fastnetmon /fastnetmon_src && \
+    mkdir -p /fastnetmon_src/src/build && \
+    cd /fastnetmon_src/src/build && \
+# Build with fresh release of libndpi
+    sed -i 's/set(NDPI_INCLUDE_DIRS "\${FASTNETMON_LIBRARIES_GLOBAL_PATH}\/ndpi\/include\/libndpi-1.7.1")/set(NDPI_INCLUDE_DIRS "\${FASTNETMON_LIBRARIES_GLOBAL_PATH}\/ndpi\/include\/libndpi-2.2.2")/' ../CMakeLists.txt && \
+# Some fixes, because builds crashes with errors 
+    sed -i '5a\#include \<sys\/time.h\>\' ../fastnetmon_simple_packet.h && \
+    sed -i '4a\#define _BSD_SOURCE\' ../fast_endianless.hpp && \
+    sed -i '5a\#include \<endian.h\>\' ../fast_endianless.hpp && \
+# Hack to disable AF_PACKET support, it builds with error and we don't need it for NetFlow anyway
+    sed -i 's/if\s*(ENABLE_AFPACKET_SUPPORT)/set (ENABLE_AFPACKET_SUPPORT OFF)\nif (ENABLE_AFPACKET_SUPPORT)/' ../CMakeLists.txt && \
+    cmake .. -DDISABLE_PF_RING_SUPPORT=ON -DDISABLE_NETMAP_SUPPORT=ON -DENABLE_LUA_SUPPORT=NO && \
+    make && \
+    cd /fastnetmon_src/src
+RUN mkdir -p /configs && \
+cp /fastnetmon_src/src/fastnetmon.conf /configs/fastnetmon.conf && \
+echo -e "192.168.0.0/16\n172.16.0.0/12\n10.0.0.0/8" > /configs/networks_list && \
+cp /fastnetmon_src/src/notify_about_attack.sh /configs && \
+chmod 755 /configs/notify_about_attack.sh && \
+echo -e "#! /bin/sh\n echo "Starting fastnetmon"\n/fastnetmon --log_file /dev/stdout & env exabgp.daemon.user=root exabgp.daemon.daemonize=true exabgp.daemon.pid=/var/run/exabgp.pid exabgp.log.destination=/var/log/exabgp.log exabgp /etc/exabgp_blackhole.conf" > /start.sh && \
+chmod 755 /start.sh && \
+#echo -e "env exabgp.daemon.user=root exabgp.daemon.daemonize=true exabgp.daemon.pid=/var/run/exabgp.pid exabgp.log.destination=/var/log/exabgp.log exabgp /etc/exabgp_blackhole.conf" >> /start.sh && \
+    cp /opt/json-c-0.13/lib/libjson-c.so* /usr/lib/ && \
+    cp /opt/ndpi/lib/libndpi.so* /usr/lib/ && \
+    cp /opt/log4cpp1.1.1/lib/liblog4cpp.so* /usr/lib/ && \
+    cp /fastnetmon_src/src/fastnetmon.conf /etc/fastnetmon.conf && \
+    cp /fastnetmon_src/src/build/fastnetmon / && \
+    cp /fastnetmon_src/src/build/fastnetmon_client / && \
+    tar czf /build.tgz /usr/lib/libjson-c.so* /usr/lib/libndpi.so* /usr/lib/liblog4cpp.so* /fastnetmon_client /fastnetmon /configs/*
+
+FROM alpine:3.12
+RUN apk add --no-cache boost-thread \
+	boost-system \
+	boost-regex \
+	boost-program_options \
+	libpcap \
+	libstdc++ \
+	ncurses \
+	curl \
+	socat \
+	python2 \
+	py2-setuptools
+COPY --from=builder /build.tgz /start.sh /
+RUN tar zxf /build.tgz && \
+curl -L https://github.com/Exa-Networks/exabgp/archive/3.4.20.tar.gz | tar zx && \
+cd exabgp-3.4.20 && python2.7 setup.py install && \
+rm -rf exabgp-3.4.20 && \
+ln -s /configs/fastnetmon.conf /etc/fastnetmon.conf && \
+ln -s /configs/networks_list /etc/networks_list && \
+ln -s /configs/notify_about_attack.sh /usr/local/bin/notify_about_attack.sh && \
+ln -s /configs/exabgp_blackhole.conf /etc/exabgp_blackhole.conf
+VOLUME ["/configs"]
+CMD ./start.sh
